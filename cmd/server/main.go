@@ -21,6 +21,14 @@ func main() {
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg.AllowOrigin))
 
+	// 添加根路径，避免浏览器直接访问时 404
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"service": "firstgo-back",
+			"status":  "running",
+		})
+	})
+
 	r.GET("/health", handler.Health)
 
 	api := r.Group("/api")
@@ -34,7 +42,7 @@ func main() {
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
-	log.Printf("server listening on http://localhost%s", addr)
+	log.Printf("server listening on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}
