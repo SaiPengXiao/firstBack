@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 )
@@ -13,19 +14,36 @@ type Config struct {
 }
 
 // Load reads configuration with sensible defaults for local development.
+// In production (GIN_MODE=release), it enforces strict environment variable validation.
 func Load() Config {
+	isProduction := os.Getenv("GIN_MODE") == "release"
+
+	// 1. Port Configuration
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
+
+	// 2. JWT Secret Configuration
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
+		if isProduction {
+			log.Fatal("FATAL: JWT_SECRET environment variable is required in production mode!")
+		}
 		secret = "dev-secret-change-in-production"
+		log.Println("WARNING: Using default JWT_SECRET. This is only safe for local development.")
 	}
+
+	// 3. CORS Origin Configuration
 	origin := os.Getenv("CORS_ALLOW_ORIGIN")
 	if origin == "" {
+		if isProduction {
+			log.Fatal("FATAL: CORS_ALLOW_ORIGIN environment variable is required in production mode!")
+		}
 		origin = "http://localhost:5173"
+		log.Println("WARNING: Using default CORS_ALLOW_ORIGIN (localhost). This is only safe for local development.")
 	}
+
 	return Config{
 		Port:        port,
 		JWTSecret:   secret,
