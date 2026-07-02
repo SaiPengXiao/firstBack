@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"firstgo-back/internal/config"
+	"firstgo-back/internal/database"
 	"firstgo-back/internal/handler"
 	"firstgo-back/internal/middleware"
 	"firstgo-back/internal/store"
@@ -15,7 +16,13 @@ import (
 func main() {
 	cfg := config.Load()
 
-	userStore := store.NewUserStore()
+	db, err := database.OpenSQLite(cfg.SQLitePath)
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	defer db.Close()
+
+	userStore := store.NewUserStore(db)
 	authHandler := handler.NewAuthHandler(cfg, userStore)
 
 	r := gin.Default()

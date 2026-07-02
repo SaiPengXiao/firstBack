@@ -1,8 +1,9 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,83 +19,86 @@ var (
 	ErrEmailTaken         = errors.New("email already taken")
 )
 
-type storedUser struct {
-	ID           string
-	Username     string
-	Email        string
-	PasswordHash []byte
-	CreatedAt    time.Time
-}
-
-// UserStore is an in-memory user repository (replace with DB later).
+// UserStore persists users in SQLite.
 type UserStore struct {
-	mu       sync.RWMutex
-	byID     map[string]*storedUser
-	byName   map[string]*storedUser
-	byEmail  map[string]*storedUser
+	db *sql.DB
 }
 
-// NewUserStore creates an empty user store.
-func NewUserStore() *UserStore {
-	return &UserStore{
-		byID:    make(map[string]*storedUser),
-		byName:  make(map[string]*storedUser),
-		byEmail: make(map[string]*storedUser),
-	}
+// NewUserStore creates a user store backed by the given database.
+func NewUserStore(db *sql.DB) *UserStore {
+	return &UserStore{db: db}
 }
 
 // Register creates a new user.
 func (s *UserStore) Register(username, email, password string) (model.User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.byName[username]; ok {
-		return model.User{}, ErrUsernameTaken
-	}
-	if _, ok := s.byEmail[email]; ok {
-		return model.User{}, ErrEmailTaken
-	}
-
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return model.User{}, err
 	}
 
-	u := &storedUser{
-		ID:           uuid.NewString(),
-		Username:     username,
-		Email:        email,
-		PasswordHash: hash,
-		CreatedAt:    time.Now().UTC(),
-	}
-	s.byID[u.ID] = u
-	s.byName[u.Username] = u
-	s.byEmail[u.Email] = u
+	id := uuid.NewString()
+	createdAt := time.Now().UTC().Format(time.RFC3339)
 
-	return model.User{ID: u.ID, Username: u.Username, Email: u.Email}, nil
+	_, err = s.db.Exec(
+		`INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)`,
+		id, username, email, hash, createdAt,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			var exists int
+			_ = s.db.QueryRow(`SELECT 1 FROM users WHERE username = ?`, username).Scan(&exists)
+			if exists == 1 {
+				return model.User{}, ErrUsernameTaken
+			}
+			return model.User{}, ErrEmailTaken
+		}
+		return model.User{}, err
+	}
+
+	return model.User{ID: id, Username: username, Email: email}, nil
 }
 
 // Login verifies credentials and returns the public user.
 func (s *UserStore) Login(username, password string) (model.User, error) {
-	s.mu.RLock()
-	u, ok := s.byName[username]
-	s.mu.RUnlock()
-	if !ok {
+	var id, uname, email string
+	var hash []byte
+	err := s.db.QueryRow(
+		`SELECT id, username, email, password_hash FROM users WHERE username = ?`,
+		username,
+	).Scan(&id, &uname, &email, &hash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.User{}, ErrInvalidCredentials
+		}
+		return model.User{}, err
+	}
+
+	if err := bcrypt.CompareHashAndPassword(hash, []byte(password)); err != nil {
 		return model.User{}, ErrInvalidCredentials
 	}
-	if err := bcrypt.CompareHashAndPassword(u.PasswordHash, []byte(password)); err != nil {
-		return model.User{}, ErrInvalidCredentials
-	}
-	return model.User{ID: u.ID, Username: u.Username, Email: u.Email}, nil
+
+	return model.User{ID: id, Username: uname, Email: email}, nil
 }
 
 // GetByID returns a user by ID (for /me).
 func (s *UserStore) GetByID(id string) (model.User, error) {
-	s.mu.RLock()
-	u, ok := s.byID[id]
-	s.mu.RUnlock()
-	if !ok {
-		return model.User{}, ErrUserNotFound
+	var uname, email string
+	err := s.db.QueryRow(
+		`SELECT username, email FROM users WHERE id = ?`,
+		id,
+	).Scan(&uname, &email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.User{}, ErrUserNotFound
+		}
+		return model.User{}, err
 	}
-	return model.User{ID: u.ID, Username: u.Username, Email: u.Email}, nil
+	return model.User{ID: id, Username: uname, Email: email}, nil
+}
+
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

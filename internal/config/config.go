@@ -11,6 +11,7 @@ type Config struct {
 	Port        string
 	JWTSecret   string
 	AllowOrigin string
+	SQLitePath  string
 }
 
 // Load reads configuration with sensible defaults for local development.
@@ -18,13 +19,11 @@ type Config struct {
 func Load() Config {
 	isProduction := os.Getenv("GIN_MODE") == "release"
 
-	// 1. Port Configuration
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// 2. JWT Secret Configuration
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		if isProduction {
@@ -34,7 +33,6 @@ func Load() Config {
 		log.Println("WARNING: Using default JWT_SECRET. This is only safe for local development.")
 	}
 
-	// 3. CORS Origin Configuration
 	origin := os.Getenv("CORS_ALLOW_ORIGIN")
 	if origin == "" {
 		if isProduction {
@@ -44,10 +42,16 @@ func Load() Config {
 		log.Println("WARNING: Using default CORS_ALLOW_ORIGIN (localhost). This is only safe for local development.")
 	}
 
+	sqlitePath := os.Getenv("SQLITE_PATH")
+	if sqlitePath == "" {
+		sqlitePath = "data/app.db"
+	}
+
 	return Config{
 		Port:        port,
 		JWTSecret:   secret,
 		AllowOrigin: origin,
+		SQLitePath:  sqlitePath,
 	}
 }
 
