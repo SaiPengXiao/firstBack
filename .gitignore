@@ -1,0 +1,39 @@
+# Go 模块缓存（误放在项目根目录时，不要提交）
+/pkg/
+
+# 本地编译产物
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 测试与覆盖率
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# 本地数据库 / 运行时数据
+/data/
+*.db
+
+# 环境变量（若以后有 .env）
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 临时文件
+tmp/
+temp/
+*.log
