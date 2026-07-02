@@ -52,6 +52,5 @@ func main() {
 	log.Printf("server listening on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
-		log.PrintI("server listening on")
 	}
 }
