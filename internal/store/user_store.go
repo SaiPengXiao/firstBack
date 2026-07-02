@@ -3,8 +3,9 @@ package store
 import (
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -19,7 +20,7 @@ var (
 	ErrEmailTaken         = errors.New("email already taken")
 )
 
-// UserStore persists users in SQLite.
+// UserStore persists users in MySQL.
 type UserStore struct {
 	db *sql.DB
 }
@@ -37,7 +38,7 @@ func (s *UserStore) Register(username, email, password string) (model.User, erro
 	}
 
 	id := uuid.NewString()
-	createdAt := time.Now().UTC().Format(time.RFC3339)
+	createdAt := time.Now().UTC().Format("2006-01-02 15:04:05")
 
 	_, err = s.db.Exec(
 		`INSERT INTO users (id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)`,
@@ -100,5 +101,6 @@ func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1062
 }

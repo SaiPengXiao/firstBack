@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 )
@@ -11,7 +13,7 @@ type Config struct {
 	Port        string
 	JWTSecret   string
 	AllowOrigin string
-	SQLitePath  string
+	MySQLDSN    string
 }
 
 // Load reads configuration with sensible defaults for local development.
@@ -42,17 +44,37 @@ func Load() Config {
 		log.Println("WARNING: Using default CORS_ALLOW_ORIGIN (localhost). This is only safe for local development.")
 	}
 
-	sqlitePath := os.Getenv("SQLITE_PATH")
-	if sqlitePath == "" {
-		sqlitePath = "data/app.db"
+	mysqlDSN := os.Getenv("MYSQL_DSN")
+	if mysqlDSN == "" {
+		user := os.Getenv("MYSQL_USER")
+		pass := os.Getenv("MYSQL_PASSWORD")
+		host := os.Getenv("MYSQL_HOST")
+		dbName := os.Getenv("MYSQL_DATABASE")
+		if user != "" && host != "" && dbName != "" {
+			mysqlPort := os.Getenv("MYSQL_PORT")
+			if mysqlPort == "" {
+				mysqlPort = "3306"
+			}
+			mysqlDSN = buildMySQLDSN(user, pass, host, mysqlPort, dbName)
+		}
+	}
+
+	if mysqlDSN == "" {
+		log.Fatal("FATAL: MySQL is required. Set MYSQL_DSN or MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_DATABASE")
 	}
 
 	return Config{
 		Port:        port,
 		JWTSecret:   secret,
 		AllowOrigin: origin,
-		SQLitePath:  sqlitePath,
+		MySQLDSN:    mysqlDSN,
 	}
+}
+
+func buildMySQLDSN(user, password, host, port, database string) string {
+	userInfo := url.UserPassword(user, password)
+	return fmt.Sprintf("%s@tcp(%s:%s)/%s?parseTime=true&loc=UTC&charset=utf8mb4&multiStatements=true",
+		userInfo.String(), host, port, database)
 }
 
 // PortInt returns the listen port as an integer.
