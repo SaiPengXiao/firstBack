@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
-
+ 
 	"github.com/gin-gonic/gin"
 
 	"firstgo-back/internal/config"
@@ -52,5 +52,6 @@ func main() {
 	log.Printf("server listening on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
+		log.PrintI("server listening on")
 	}
 }
