@@ -1,12 +1,18 @@
 package database
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
+
+func init() {
+	// Railway 等托管 MySQL 常用自签证书，无法用 tls=true 校验；DSN 使用 tls=skip-verify
+	_ = mysql.RegisterTLSConfig("skip-verify", &tls.Config{InsecureSkipVerify: true})
+}
 
 // OpenMySQL opens a MySQL connection pool and runs migrations.
 // dsn examples:
