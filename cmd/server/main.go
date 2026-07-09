@@ -11,6 +11,7 @@ import (
 	"firstgo-back/internal/database"
 	"firstgo-back/internal/handler"
 	"firstgo-back/internal/middleware"
+	"firstgo-back/internal/model"
 	"firstgo-back/internal/store"
 )
 
@@ -26,8 +27,11 @@ func main() {
 
 	userStore := store.NewUserStore(db)
 	menuStore := store.NewMenuStore(db)
-	authHandler := handler.NewAuthHandler(cfg, userStore)
-	menuHandler := handler.NewMenuHandler(menuStore)
+	permStore := store.NewPermissionStore(db)
+	authHandler := handler.NewAuthHandler(cfg, userStore, permStore)
+	menuHandler := handler.NewMenuHandler(menuStore, permStore)
+	orderStore := store.NewOrderStore(db)
+	orderHandler := handler.NewOrderHandler(orderStore)
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg.AllowOrigin))
@@ -51,10 +55,11 @@ func main() {
 			authGroup.GET("/me", middleware.JWTAuth(cfg.JWTSecret), authHandler.Me)
 		}
 
-		// 菜单：GET 可匿名（点菜页）；写操作需登录
-		api.GET("/menu", menuHandler.GetMenu)
+		// 菜单：读取需登录（admin 看全部含未上架，普通用户只看上架）；写操作需对应权限
 		menuRead := api.Group("/menu")
+		menuRead.Use(middleware.JWTAuth(cfg.JWTSecret))
 		{
+			menuRead.GET("", menuHandler.GetMenu)
 			menuRead.GET("/categories", menuHandler.ListCategories)
 			menuRead.GET("/items", menuHandler.ListItems)
 			menuRead.GET("/items/:id", menuHandler.GetItem)
@@ -62,12 +67,20 @@ func main() {
 		menuWrite := api.Group("/menu")
 		menuWrite.Use(middleware.JWTAuth(cfg.JWTSecret))
 		{
-			menuWrite.POST("/categories", menuHandler.CreateCategory)
-			menuWrite.PUT("/categories/:id", menuHandler.UpdateCategory)
-			menuWrite.DELETE("/categories/:id", menuHandler.DeleteCategory)
-			menuWrite.POST("/items", menuHandler.CreateItem)
-			menuWrite.PUT("/items/:id", menuHandler.UpdateItem)
-			menuWrite.DELETE("/items/:id", menuHandler.DeleteItem)
+			menuWrite.POST("/categories", middleware.RequirePermission(permStore, model.PermCategoryCreate), menuHandler.CreateCategory)
+			menuWrite.PUT("/categories/:id", middleware.RequirePermission(permStore, model.PermCategoryUpdate), menuHandler.UpdateCategory)
+			menuWrite.DELETE("/categories/:id", middleware.RequirePermission(permStore, model.PermCategoryDelete), menuHandler.DeleteCategory)
+			menuWrite.POST("/items", middleware.RequirePermission(permStore, model.PermItemCreate), menuHandler.CreateItem)
+			menuWrite.PUT("/items/:id", middleware.RequirePermission(permStore, model.PermItemUpdate), menuHandler.UpdateItem)
+			menuWrite.DELETE("/items/:id", middleware.RequirePermission(permStore, model.PermItemDelete), menuHandler.DeleteItem)
+		}
+
+		// 订单：下单=登录即可；看单=仅管理员（order:read）
+		orders := api.Group("/orders")
+		orders.Use(middleware.JWTAuth(cfg.JWTSecret))
+		{
+			orders.POST("", orderHandler.Create)
+			orders.GET("", middleware.RequirePermission(permStore, model.PermOrderRead), orderHandler.List)
 		}
 	}
 

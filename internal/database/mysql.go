@@ -83,5 +83,32 @@ CREATE TABLE IF NOT EXISTS menu_items (
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate mysql: %w", err)
 	}
+
+	const ordersSchema = `
+CREATE TABLE IF NOT EXISTS orders (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  note VARCHAR(255) DEFAULT NULL,
+  total_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  created_at DATETIME(3) NOT NULL,
+  CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  KEY idx_orders_user (user_id),
+  KEY idx_orders_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id CHAR(36) PRIMARY KEY,
+  order_id CHAR(36) NOT NULL,
+  menu_item_id CHAR(36) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  quantity INT NOT NULL,
+  CONSTRAINT fk_oi_order FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  KEY idx_oi_order (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`
+	if _, err := db.Exec(ordersSchema); err != nil {
+		return fmt.Errorf("migrate mysql orders: %w", err)
+	}
 	return nil
 }

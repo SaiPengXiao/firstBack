@@ -12,19 +12,35 @@ import (
 
 // MenuHandler serves menu read/write APIs.
 type MenuHandler struct {
-	store *store.MenuStore
+	store     *store.MenuStore
+	permStore *store.PermissionStore
 }
 
 // NewMenuHandler creates a MenuHandler.
-func NewMenuHandler(menuStore *store.MenuStore) *MenuHandler {
-	return &MenuHandler{store: menuStore}
+func NewMenuHandler(menuStore *store.MenuStore, permStore *store.PermissionStore) *MenuHandler {
+	return &MenuHandler{store: menuStore, permStore: permStore}
 }
 
-// GetMenu GET /api/menu — categories with nested items (default: only available items).
-// Query: includeUnavailable=true to include下架菜品 (for admin editor).
+// canSeeAll reports whether the current user may view unavailable items.
+// Granted via the menu:read permission (held by admin). Basic logged-in users
+// see only available items.
+func (h *MenuHandler) canSeeAll(c *gin.Context) bool {
+	uid, _ := c.Get("userID")
+	id, _ := uid.(string)
+	if id == "" {
+		return false
+	}
+	ok, err := h.permStore.HasPermission(id, model.PermMenuRead)
+	if err != nil {
+		return false
+	}
+	return ok
+}
+
+// GetMenu GET /api/menu — categories with nested items.
+// Admin (menu:read) sees all items incl. unavailable; others see available only.
 func (h *MenuHandler) GetMenu(c *gin.Context) {
-	includeAll := c.Query("includeUnavailable") == "true" || c.Query("all") == "true"
-	data, err := h.store.ListMenu(includeAll)
+	data, err := h.store.ListMenu(h.canSeeAll(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Message: "获取菜单失败"})
 		return
@@ -103,9 +119,9 @@ func (h *MenuHandler) DeleteCategory(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ListItems GET /api/menu/items — optional ?categoryId= & includeUnavailable=
+// ListItems GET /api/menu/items — optional ?categoryId=; availability by role.
 func (h *MenuHandler) ListItems(c *gin.Context) {
-	includeAll := c.Query("includeUnavailable") == "true"
+	includeAll := h.canSeeAll(c)
 	categoryID := c.Query("categoryId")
 	var (
 		list []model.MenuItem
@@ -133,6 +149,11 @@ func (h *MenuHandler) GetItem(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Message: "获取菜品失败"})
+		return
+	}
+	// Non-admin may not view unavailable items.
+	if !item.IsAvailable && !h.canSeeAll(c) {
+		c.JSON(http.StatusNotFound, model.ErrorResponse{Message: "菜品不存在"})
 		return
 	}
 	c.JSON(http.StatusOK, item)

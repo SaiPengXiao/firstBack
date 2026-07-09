@@ -17,13 +17,27 @@ const tokenTTL = 24 * time.Hour
 
 // AuthHandler handles login, register, and profile.
 type AuthHandler struct {
-	cfg   config.Config
-	store *store.UserStore
+	cfg       config.Config
+	store     *store.UserStore
+	permStore *store.PermissionStore
 }
 
 // NewAuthHandler creates an AuthHandler.
-func NewAuthHandler(cfg config.Config, userStore *store.UserStore) *AuthHandler {
-	return &AuthHandler{cfg: cfg, store: userStore}
+func NewAuthHandler(cfg config.Config, userStore *store.UserStore, permStore *store.PermissionStore) *AuthHandler {
+	return &AuthHandler{cfg: cfg, store: userStore, permStore: permStore}
+}
+
+// attachRoles fills the user's Roles from the RBAC tables.
+func (h *AuthHandler) attachRoles(user *model.User) {
+	if user == nil {
+		return
+	}
+	roles, err := h.permStore.GetRolesByUserID(user.ID)
+	if err != nil || roles == nil {
+		user.Roles = []string{}
+		return
+	}
+	user.Roles = roles
 }
 
 // Register godoc
@@ -55,6 +69,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	h.attachRoles(&user)
 	c.JSON(http.StatusOK, model.AuthResponse{User: user, Token: token})
 }
 
@@ -83,6 +98,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	h.attachRoles(&user)
 	c.JSON(http.StatusOK, model.AuthResponse{User: user, Token: token})
 }
 
@@ -98,6 +114,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 
+	h.attachRoles(&user)
 	c.JSON(http.StatusOK, user)
 }
 

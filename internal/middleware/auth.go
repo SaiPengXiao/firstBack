@@ -8,6 +8,7 @@ import (
 
 	"firstgo-back/internal/auth"
 	"firstgo-back/internal/model"
+	"firstgo-back/internal/store"
 )
 
 // JWTAuth validates Bearer tokens and sets userID on context.
@@ -36,6 +37,34 @@ func JWTAuth(secret string) gin.HandlerFunc {
 
 		c.Set("userID", claims.UserID)
 		c.Set("username", claims.Username)
+		c.Next()
+	}
+}
+
+// RequirePermission checks the user's permissions against the DB on every
+// request (so role changes take effect immediately, without re-login). It must
+// run after JWTAuth, which sets userID on the context.
+func RequirePermission(permStore *store.PermissionStore, code string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, _ := c.Get("userID")
+		id, ok := userID.(string)
+		if !ok || id == "" {
+			c.JSON(http.StatusUnauthorized, model.ErrorResponse{Message: "未登录"})
+			c.Abort()
+			return
+		}
+
+		ok, err := permStore.HasPermission(id, code)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.ErrorResponse{Message: "权限校验失败"})
+			c.Abort()
+			return
+		}
+		if !ok {
+			c.JSON(http.StatusForbidden, model.ErrorResponse{Message: "无操作权限"})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

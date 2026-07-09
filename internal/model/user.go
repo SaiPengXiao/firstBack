@@ -2,10 +2,24 @@ package model
 
 // User is returned to clients after login/register.
 type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID       string   `json:"id"`
+	Username string   `json:"username"`
+	Email    string   `json:"email"`
+	Roles    []string `json:"roles"`
 }
+
+// Permission codes (resource:action). Stored in the permissions table and
+// referenced by RequirePermission middleware / route registration.
+const (
+	PermMenuRead       = "menu:read"
+	PermCategoryCreate = "menu:category:create"
+	PermCategoryUpdate = "menu:category:update"
+	PermCategoryDelete = "menu:category:delete"
+	PermItemCreate     = "menu:item:create"
+	PermItemUpdate     = "menu:item:update"
+	PermItemDelete     = "menu:item:delete"
+	PermOrderRead      = "order:read"
+)
 
 // LoginRequest matches front/react LoginFormValues.
 type LoginRequest struct {
