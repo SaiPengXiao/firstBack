@@ -32,6 +32,7 @@ func main() {
 	menuHandler := handler.NewMenuHandler(menuStore, permStore)
 	orderStore := store.NewOrderStore(db)
 	orderHandler := handler.NewOrderHandler(orderStore)
+	imgProxyHandler := handler.NewImgProxyHandler()
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg.AllowOrigin))
@@ -45,6 +46,9 @@ func main() {
 	})
 
 	r.GET("/health", handler.Health)
+
+	// 图片代理：小程序只配置本域，由后端拉取外部图片（公开接口，无鉴权）
+	r.GET("/img-proxy", imgProxyHandler.Proxy)
 
 	api := r.Group("/api")
 	{
