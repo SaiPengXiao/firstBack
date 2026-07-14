@@ -58,3 +58,19 @@ func (h *OrderHandler) List(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"orders": orders})
 }
+
+// ListMine GET /api/orders — any logged-in user, filtered to their own orders.
+func (h *OrderHandler) ListMine(c *gin.Context) {
+	uid, _ := c.Get("userID")
+	userID, _ := uid.(string)
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, model.ErrorResponse{Message: "未登录"})
+		return
+	}
+	orders, err := h.store.ListByUser(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Message: "获取订单失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"orders": orders})
+}

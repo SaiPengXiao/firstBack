@@ -13,6 +13,7 @@ import (
 	"firstgo-back/internal/middleware"
 	"firstgo-back/internal/model"
 	"firstgo-back/internal/store"
+	"firstgo-back/internal/wechat"
 )
 
 func main() {
@@ -33,6 +34,8 @@ func main() {
 	orderStore := store.NewOrderStore(db)
 	orderHandler := handler.NewOrderHandler(orderStore)
 	imgProxyHandler := handler.NewImgProxyHandler()
+	wechatClient := wechat.NewClient(cfg.WechatAppID, cfg.WechatAppSecret)
+	wechatHandler := handler.NewWechatHandler(cfg, wechatClient, userStore)
 
 	r := gin.Default()
 	r.Use(middleware.CORS(cfg.AllowOrigin))
@@ -56,6 +59,7 @@ func main() {
 		{
 			authGroup.POST("/login", authHandler.Login)
 			authGroup.POST("/register", authHandler.Register)
+			authGroup.POST("/wechat-login", wechatHandler.Login)
 			authGroup.GET("/me", middleware.JWTAuth(cfg.JWTSecret), authHandler.Me)
 		}
 
@@ -79,12 +83,19 @@ func main() {
 			menuWrite.DELETE("/items/:id", middleware.RequirePermission(permStore, model.PermItemDelete), menuHandler.DeleteItem)
 		}
 
-		// 订单：下单=登录即可；看单=仅管理员（order:read）
+		// 订单：下单=登录即可；用户查自己的单
 		orders := api.Group("/orders")
 		orders.Use(middleware.JWTAuth(cfg.JWTSecret))
 		{
 			orders.POST("", orderHandler.Create)
-			orders.GET("", middleware.RequirePermission(permStore, model.PermOrderRead), orderHandler.List)
+			orders.GET("", orderHandler.ListMine)
+		}
+
+		// 管理端：查全部订单（需 order:read 权限）
+		admin := api.Group("/admin")
+		admin.Use(middleware.JWTAuth(cfg.JWTSecret))
+		{
+			admin.GET("/orders", middleware.RequirePermission(permStore, model.PermOrderRead), orderHandler.List)
 		}
 	}
 

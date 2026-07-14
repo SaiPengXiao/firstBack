@@ -11,10 +11,12 @@ import (
 
 // Config holds application configuration from environment variables.
 type Config struct {
-	Port        string
-	JWTSecret   string
-	AllowOrigin string
-	MySQLDSN    string
+	Port             string
+	JWTSecret        string
+	AllowOrigin      string
+	MySQLDSN         string
+	WechatAppID      string
+	WechatAppSecret  string
 }
 
 // Load reads configuration with sensible defaults for local development.
@@ -53,11 +55,16 @@ func Load() Config {
 		log.Fatal("FATAL: MySQL is required. Set MYSQL_DSN, MYSQL_URL (or DATABASE_URL), or MYSQL_USER/MYSQL_HOST/MYSQL_DATABASE")
 	}
 
+	wechatAppID := os.Getenv("WECHAT_MINI_PROGRAM_APP_ID")
+	wechatAppSecret := os.Getenv("WECHAT_MINI_PROGRAM_APP_SECRET")
+
 	return Config{
-		Port:        port,
-		JWTSecret:   secret,
-		AllowOrigin: origin,
-		MySQLDSN:    mysqlDSN,
+		Port:             port,
+		JWTSecret:        secret,
+		AllowOrigin:      origin,
+		MySQLDSN:         mysqlDSN,
+		WechatAppID:      wechatAppID,
+		WechatAppSecret:  wechatAppSecret,
 	}
 }
 

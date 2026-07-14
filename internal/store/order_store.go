@@ -68,9 +68,13 @@ func (s *OrderStore) Create(userID string, req model.CreateOrderRequest) (model.
 	if req.Note != "" {
 		note = req.Note
 	}
+	var tableNo interface{}
+	if req.TableNo != "" {
+		tableNo = req.TableNo
+	}
 	if _, err := tx.Exec(
-		`INSERT INTO orders (id, user_id, note, total_amount, created_at) VALUES (?, ?, ?, ?, ?)`,
-		orderID, userID, note, total, createdAt,
+		`INSERT INTO orders (id, user_id, table_no, note, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		orderID, userID, tableNo, note, total, createdAt,
 	); err != nil {
 		return model.Order{}, err
 	}
@@ -89,6 +93,7 @@ func (s *OrderStore) Create(userID string, req model.CreateOrderRequest) (model.
 	return model.Order{
 		ID:          orderID,
 		UserID:      userID,
+		TableNo:     req.TableNo,
 		Note:        req.Note,
 		TotalAmount: total,
 		CreatedAt:   createdAt,
@@ -96,10 +101,10 @@ func (s *OrderStore) Create(userID string, req model.CreateOrderRequest) (model.
 	}, nil
 }
 
-// List returns all orders with the ordering user's username and their items.
+// List returns all orders with the ordering user's username and their items (admin).
 func (s *OrderStore) List() ([]model.Order, error) {
 	rows, err := s.db.Query(
-		`SELECT o.id, o.user_id, u.username, o.note, o.total_amount, o.created_at
+		`SELECT o.id, o.user_id, u.username, COALESCE(o.table_no,''), o.note, o.total_amount, o.created_at
 		   FROM orders o
 		   JOIN users u ON u.id = o.user_id
 		  ORDER BY o.created_at DESC`,
@@ -114,7 +119,7 @@ func (s *OrderStore) List() ([]model.Order, error) {
 	for rows.Next() {
 		var o model.Order
 		var note sql.NullString
-		if err := rows.Scan(&o.ID, &o.UserID, &o.Username, &note, &o.TotalAmount, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.ID, &o.UserID, &o.Username, &o.TableNo, &note, &o.TotalAmount, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		if note.Valid {
@@ -130,7 +135,48 @@ func (s *OrderStore) List() ([]model.Order, error) {
 	if len(orders) == 0 {
 		return orders, nil
 	}
+	return s.fillOrderItems(orders, index)
+}
 
+// ListByUser returns orders for a specific user with their items.
+func (s *OrderStore) ListByUser(userID string) ([]model.Order, error) {
+	rows, err := s.db.Query(
+		`SELECT o.id, o.user_id, COALESCE(o.table_no,''), o.note, o.total_amount, o.created_at
+		   FROM orders o
+		  WHERE o.user_id = ?
+		  ORDER BY o.created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	orders := make([]model.Order, 0)
+	index := make(map[string]int)
+	for rows.Next() {
+		var o model.Order
+		var note sql.NullString
+		if err := rows.Scan(&o.ID, &o.UserID, &o.TableNo, &note, &o.TotalAmount, &o.CreatedAt); err != nil {
+			return nil, err
+		}
+		if note.Valid {
+			o.Note = note.String
+		}
+		o.Items = []model.OrderItem{}
+		index[o.ID] = len(orders)
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(orders) == 0 {
+		return orders, nil
+	}
+	return s.fillOrderItems(orders, index)
+}
+
+func (s *OrderStore) fillOrderItems(orders []model.Order, index map[string]int) ([]model.Order, error) {
 	itemRows, err := s.db.Query(
 		`SELECT id, order_id, menu_item_id, name, price, quantity FROM order_items`,
 	)

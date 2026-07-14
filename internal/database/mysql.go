@@ -3,6 +3,7 @@ package database
 import (
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -110,5 +111,56 @@ CREATE TABLE IF NOT EXISTS order_items (
 	if _, err := db.Exec(ordersSchema); err != nil {
 		return fmt.Errorf("migrate mysql orders: %w", err)
 	}
+	if err := alterMigrateMySQL(db); err != nil {
+		return fmt.Errorf("alter migrate mysql: %w", err)
+	}
 	return nil
+}
+
+// alterMigrateMySQL applies incremental schema changes idempotently.
+func alterMigrateMySQL(db *sql.DB) error {
+	// users table additions (idempotent: ignore "Duplicate column name" 1060)
+	userAlters := []string{
+		`ALTER TABLE users ADD COLUMN openid VARCHAR(128) NULL`,
+		`ALTER TABLE users ADD COLUMN unionid VARCHAR(128) NULL`,
+		`ALTER TABLE users ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'`,
+		`ALTER TABLE users ADD COLUMN last_login_at DATETIME(3) NULL`,
+		`ALTER TABLE users ADD COLUMN updated_at DATETIME(3) NULL`,
+	}
+	for _, stmt := range userAlters {
+		if _, err := db.Exec(stmt); err != nil && !isDupColumnOrIndex(err) {
+			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
+
+	// openid unique index (NULLs don't trigger unique constraint, safe for old accounts)
+	indexStmts := []string{
+		`CREATE UNIQUE INDEX uk_users_openid ON users(openid)`,
+	}
+	for _, stmt := range indexStmts {
+		if _, err := db.Exec(stmt); err != nil && !isDupColumnOrIndex(err) {
+			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
+
+	// orders table additions
+	orderAlters := []string{
+		`ALTER TABLE orders ADD COLUMN table_no VARCHAR(20) NULL`,
+		`ALTER TABLE orders ADD COLUMN updated_at DATETIME(3) NULL`,
+	}
+	for _, stmt := range orderAlters {
+		if _, err := db.Exec(stmt); err != nil && !isDupColumnOrIndex(err) {
+			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+func isDupColumnOrIndex(err error) bool {
+	if err == nil {
+		return false
+	}
+	var me *mysql.MySQLError
+	// 1060 = Duplicate column name, 1061 = Duplicate key name
+	return errors.As(err, &me) && (me.Number == 1060 || me.Number == 1061)
 }

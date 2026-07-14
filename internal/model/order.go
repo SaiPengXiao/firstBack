@@ -14,7 +14,8 @@ type OrderItem struct {
 type Order struct {
 	ID          string      `json:"id"`
 	UserID      string      `json:"userId"`
-	Username    string      `json:"username"`
+	Username    string      `json:"username,omitempty"`
+	TableNo     string      `json:"tableNo,omitempty"`
 	Note        string      `json:"note,omitempty"`
 	TotalAmount float64     `json:"totalAmount"`
 	CreatedAt   string      `json:"createdAt"`
@@ -29,6 +30,7 @@ type CreateOrderItem struct {
 
 // CreateOrderRequest body for POST /api/orders.
 type CreateOrderRequest struct {
-	Items []CreateOrderItem `json:"items" binding:"required,min=1,dive"`
-	Note  string            `json:"note"`
+	Items   []CreateOrderItem `json:"items" binding:"required,min=1,dive"`
+	TableNo string            `json:"tableNo"`
+	Note    string            `json:"note"`
 }

@@ -40,7 +40,29 @@ type AuthResponse struct {
 	Token string `json:"token"`
 }
 
+// WechatLoginRequest body for POST /api/auth/wechat-login.
+type WechatLoginRequest struct {
+	Code string `json:"code" binding:"required"`
+}
+
+// WechatLoginResponse is the success payload for WeChat login.
+type WechatLoginResponse struct {
+	Token     string         `json:"token"`
+	ExpiresIn int            `json:"expiresIn"`
+	User      WechatUserInfo `json:"user"`
+}
+
+// WechatUserInfo is the public user profile returned after WeChat login.
+type WechatUserInfo struct {
+	ID          string  `json:"id"`
+	DisplayName string  `json:"displayName"`
+	Nickname    *string `json:"nickname"`
+	AvatarURL   *string `json:"avatarUrl"`
+	Phone       *string `json:"phone"`
+}
+
 // ErrorResponse is used for API errors.
 type ErrorResponse struct {
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }

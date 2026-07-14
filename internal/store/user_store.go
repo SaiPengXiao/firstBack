@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -18,6 +19,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrUsernameTaken      = errors.New("username already taken")
 	ErrEmailTaken         = errors.New("email already taken")
+	ErrUserDisabled       = errors.New("user disabled")
 )
 
 // UserStore persists users in MySQL.
@@ -103,4 +105,78 @@ func isUniqueViolation(err error) bool {
 	}
 	var me *mysql.MySQLError
 	return errors.As(err, &me) && me.Number == 1062
+}
+
+// FindOrCreateByOpenID looks up a user by openid, creating one if absent.
+// Concurrent inserts are handled via unique-index conflict + retry.
+func (s *UserStore) FindOrCreateByOpenID(openid, unionid string) (model.User, error) {
+	// Try to find existing user.
+	u, err := s.getByOpenID(openid)
+	if err == nil {
+		// Update last_login_at and unionid if newly provided.
+		s.updateLogin(openid, unionid)
+		return u, nil
+	}
+	if !errors.Is(err, ErrUserNotFound) {
+		return model.User{}, err
+	}
+
+	// Create new user.
+	id := uuid.NewString()
+	ts := time.Now().UTC().Format("2006-01-02 15:04:05")
+	displayName := fmt.Sprintf("顾客%.5s", id)
+
+	_, err = s.db.Exec(
+		`INSERT INTO users (id, username, email, password_hash, openid, unionid, status, created_at, updated_at, last_login_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+		id, displayName, displayName+"@wechat", []byte{}, openid, unionid, ts, ts, ts,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			// Concurrent insert won the race; re-fetch.
+			u, err := s.getByOpenID(openid)
+			if err != nil {
+				return model.User{}, err
+			}
+			s.updateLogin(openid, unionid)
+			return u, nil
+		}
+		return model.User{}, err
+	}
+
+	return model.User{ID: id, Username: displayName, Email: displayName + "@wechat"}, nil
+}
+
+// getByOpenID returns a user by openid, respecting status.
+func (s *UserStore) getByOpenID(openid string) (model.User, error) {
+	var (
+		id, uname, email, status string
+	)
+	err := s.db.QueryRow(
+		`SELECT id, username, email, status FROM users WHERE openid = ?`,
+		openid,
+	).Scan(&id, &uname, &email, &status)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.User{}, ErrUserNotFound
+		}
+		return model.User{}, err
+	}
+	if status == "disabled" {
+		return model.User{}, ErrUserDisabled
+	}
+	return model.User{ID: id, Username: uname, Email: email}, nil
+}
+
+// updateLogin refreshes last_login_at and fills unionid if not yet set.
+func (s *UserStore) updateLogin(openid, unionid string) {
+	ts := time.Now().UTC().Format("2006-01-02 15:04:05")
+	if unionid != "" {
+		s.db.Exec(
+			`UPDATE users SET last_login_at = ?, unionid = CASE WHEN unionid IS NULL THEN ? ELSE unionid END WHERE openid = ?`,
+			ts, unionid, openid,
+		)
+	} else {
+		s.db.Exec(`UPDATE users SET last_login_at = ? WHERE openid = ?`, ts, openid)
+	}
 }
