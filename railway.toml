@@ -1,0 +1,11 @@
+# Railway 必须跑完整业务服务 cmd/server（含 /api 与 /img-proxy）
+# 不要跑 cmd/imgproxy：它只监听独立端口且不含业务 API，会导致公网 502
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "go build -o bin/server ./cmd/server"
+
+[deploy]
+startCommand = "./bin/server"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

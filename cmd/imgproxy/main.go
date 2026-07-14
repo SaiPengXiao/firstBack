@@ -380,8 +380,14 @@ func truncate(s string, n int) string {
 }
 
 func main() {
+	// 本地默认 :8088；Railway 等平台注入 PORT 时优先使用
 	addr := listenDefault
 	if v := os.Getenv("IMG_PROXY_ADDR"); v != "" {
+		addr = v
+	} else if v := os.Getenv("PORT"); v != "" {
+		if !strings.HasPrefix(v, ":") {
+			v = ":" + v
+		}
 		addr = v
 	}
 	s := newProxyServer()
