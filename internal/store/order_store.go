@@ -101,16 +101,55 @@ func (s *OrderStore) Create(userID string, req model.CreateOrderRequest) (model.
 	}, nil
 }
 
-// List returns all orders with the ordering user's username and their items (admin).
-func (s *OrderStore) List() ([]model.Order, error) {
-	rows, err := s.db.Query(
-		`SELECT o.id, o.user_id, u.username, COALESCE(o.table_no,''), o.note, o.total_amount, o.created_at
+// List returns paginated, filtered orders for the admin panel.
+func (s *OrderStore) List(q model.AdminOrderQuery) ([]model.Order, model.Pagination, error) {
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := q.PageSize
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	var args []interface{}
+	where := "WHERE 1=1"
+
+	if q.Username != "" {
+		where += " AND u.username LIKE ?"
+		args = append(args, "%"+q.Username+"%")
+	}
+	if q.StartTime != "" {
+		where += " AND o.created_at >= ?"
+		args = append(args, q.StartTime)
+	}
+	if q.EndTime != "" {
+		where += " AND o.created_at <= ?"
+		args = append(args, q.EndTime)
+	}
+	if q.MenuItemName != "" {
+		where += " AND o.id IN (SELECT oi.order_id FROM order_items oi WHERE oi.name LIKE ?)"
+		args = append(args, "%"+q.MenuItemName+"%")
+	}
+
+	// Count
+	var total int
+	countSQL := "SELECT COUNT(1) FROM orders o JOIN users u ON u.id = o.user_id " + where
+	if err := s.db.QueryRow(countSQL, args...).Scan(&total); err != nil {
+		return nil, model.Pagination{}, err
+	}
+
+	// Fetch page
+	offset := (page - 1) * pageSize
+	querySQL := `SELECT o.id, o.user_id, u.username, COALESCE(o.table_no,''), o.note, o.total_amount, o.created_at
 		   FROM orders o
-		   JOIN users u ON u.id = o.user_id
-		  ORDER BY o.created_at DESC`,
-	)
+		   JOIN users u ON u.id = o.user_id ` + where +
+		` ORDER BY o.created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, pageSize, offset)
+
+	rows, err := s.db.Query(querySQL, args...)
 	if err != nil {
-		return nil, err
+		return nil, model.Pagination{}, err
 	}
 	defer rows.Close()
 
@@ -120,7 +159,7 @@ func (s *OrderStore) List() ([]model.Order, error) {
 		var o model.Order
 		var note sql.NullString
 		if err := rows.Scan(&o.ID, &o.UserID, &o.Username, &o.TableNo, &note, &o.TotalAmount, &o.CreatedAt); err != nil {
-			return nil, err
+			return nil, model.Pagination{}, err
 		}
 		if note.Valid {
 			o.Note = note.String
@@ -130,12 +169,24 @@ func (s *OrderStore) List() ([]model.Order, error) {
 		orders = append(orders, o)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, model.Pagination{}, err
 	}
 	if len(orders) == 0 {
-		return orders, nil
+		return orders, model.Pagination{Page: page, PageSize: pageSize, Total: total, TotalPages: 0}, nil
 	}
-	return s.fillOrderItems(orders, index)
+
+	filled, err := s.fillOrderItemsIn(orders, index)
+	if err != nil {
+		return nil, model.Pagination{}, err
+	}
+
+	totalPages := (total + pageSize - 1) / pageSize
+	return filled, model.Pagination{
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
 }
 
 // ListByUser returns orders for a specific user with their items.
@@ -173,12 +224,28 @@ func (s *OrderStore) ListByUser(userID string) ([]model.Order, error) {
 	if len(orders) == 0 {
 		return orders, nil
 	}
-	return s.fillOrderItems(orders, index)
+	return s.fillOrderItemsIn(orders, index)
 }
 
-func (s *OrderStore) fillOrderItems(orders []model.Order, index map[string]int) ([]model.Order, error) {
+func (s *OrderStore) fillOrderItemsIn(orders []model.Order, index map[string]int) ([]model.Order, error) {
+	if len(orders) == 0 {
+		return orders, nil
+	}
+
+	// Build IN clause for only the orders on this page
+	ids := make([]interface{}, len(orders))
+	placeholders := ""
+	for i, o := range orders {
+		ids[i] = o.ID
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += "?"
+	}
+
 	itemRows, err := s.db.Query(
-		`SELECT id, order_id, menu_item_id, name, price, quantity FROM order_items`,
+		`SELECT id, order_id, menu_item_id, name, price, quantity FROM order_items WHERE order_id IN (`+placeholders+`)`,
+		ids...,
 	)
 	if err != nil {
 		return nil, err

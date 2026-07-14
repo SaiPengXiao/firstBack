@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -49,14 +50,22 @@ func (h *OrderHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, order)
 }
 
-// List GET /api/orders — admin only (RequirePermission order:read on the route).
+// List GET /api/admin/orders — admin only, with optional filters and pagination.
 func (h *OrderHandler) List(c *gin.Context) {
-	orders, err := h.store.List()
+	q := model.AdminOrderQuery{
+		Page:         parsePage(c.Query("page")),
+		PageSize:     parsePage(c.Query("pageSize")),
+		Username:     c.Query("username"),
+		MenuItemName: c.Query("menuItemName"),
+		StartTime:    c.Query("startTime"),
+		EndTime:      c.Query("endTime"),
+	}
+	orders, p, err := h.store.List(q)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{Message: "获取订单失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"orders": orders})
+	c.JSON(http.StatusOK, model.PaginatedOrders{Orders: orders, Pagination: p})
 }
 
 // ListMine GET /api/orders — any logged-in user, filtered to their own orders.
@@ -73,4 +82,12 @@ func (h *OrderHandler) ListMine(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"orders": orders})
+}
+
+func parsePage(s string) int {
+	if s == "" {
+		return 0
+	}
+	n, _ := strconv.Atoi(s)
+	return n
 }
